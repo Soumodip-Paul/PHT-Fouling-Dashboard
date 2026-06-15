@@ -1,0 +1,6 @@
+{
+  "name": "Pre-Heat Train Fouling Visualizer",
+  "description": "Dynamic Pre-Heat Train Fouling & Predictive Maintenance Visualizer that computes LMTD, Heat Duty, and actual heat transfer coefficient to predict remaining time until critical cleaning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

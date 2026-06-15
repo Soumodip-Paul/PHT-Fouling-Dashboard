@@ -1,0 +1,1562 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-50">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pre-Heat Train Fouling & Predictive Maintenance Visualizer</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+            colors: {
+              brand: {
+                50: '#f8fafc',
+                100: '#f1f5f9',
+                200: '#e2e8f0',
+                300: '#cbd5e1',
+                400: '#0891b2',
+                500: '#06b6d4',
+                600: '#0891b2',
+                700: '#0e7490',
+                800: '#1e293b',
+                900: '#0f172a',
+                950: '#0c1424',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+    </style>
+  </head>
+  <body class="h-full overflow-hidden flex flex-col text-slate-800">
+    <!-- Top Header -->
+    <header id="header-container" class="bg-brand-900 border-b border-brand-800 shrink-0 px-4 py-2.5 flex flex-col sm:flex-row justify-between items-center gap-3">
+      <div class="flex items-center gap-2.5">
+        <div class="p-1.5 bg-brand-400/10 border border-brand-400/20 rounded-md text-brand-400">
+          <i data-lucide="activity" class="w-4.5 h-4.5 animate-pulse"></i>
+        </div>
+        <div>
+          <span class="text-white font-extrabold tracking-tight text-sm uppercase">THERMO-VISION</span>
+          <span class="ml-2 px-1.5 py-0.5 rounded bg-brand-800 text-[10px] text-brand-300 font-mono font-medium">V4.2 • FOULING ANALYTICS</span>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Downloader and Demo triggers -->
+        <button id="download-template-btn" class="text-[11px] bg-brand-800 hover:bg-brand-700 text-slate-200 border border-slate-700 px-2.5 py-1.5 rounded font-medium transition flex items-center gap-1">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          Fouling CSV Template
+        </button>
+        <button id="download-design-template-btn" class="text-[11px] bg-brand-800 hover:bg-brand-700 text-slate-200 border border-slate-700 px-2.5 py-1.5 rounded font-medium transition flex items-center gap-1">
+          <i data-lucide="settings-2" class="w-3.5 h-3.5"></i>
+          Design Specs Template
+        </button>
+        <button id="reset-demo-btn" class="text-[11px] bg-brand-600 hover:bg-brand-500 text-white font-semibold px-3 py-1.5 rounded transition flex items-center gap-1 shadow-sm">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          Load Demo Data
+        </button>
+      </div>
+    </header>
+
+    <!-- Error/Notice Alert Toast Box (Absolute or static inside frame) -->
+    <div id="alert-banner" class="hidden bg-amber-50 border-b border-amber-200 text-amber-800 px-6 py-2.5 flex items-center justify-between text-xs font-medium shrink-0 animate-fadeIn">
+      <div class="flex items-center gap-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 shrink-0"></i>
+        <span id="alert-message">Notice text</span>
+      </div>
+      <button onclick="document.getElementById('alert-banner').classList.add('hidden')" class="hover:bg-amber-100 p-1 rounded">
+        <i data-lucide="x" class="w-4 h-4 text-amber-700"></i>
+      </button>
+    </div>
+
+    <!-- Main Workspace Frame -->
+    <main class="flex-1 overflow-hidden flex flex-col lg:flex-row">
+      <!-- Left Panel: Configurations, Inputs and Latest Stats -->
+      <section class="w-full lg:w-[290px] bg-white border-r border-slate-200 flex flex-col shrink-0 overflow-y-auto custom-scrollbar p-3.5 space-y-4">
+        <!-- 1. CSV Loader Section -->
+        <div class="border border-slate-200 bg-slate-50/50 p-3 rounded-lg space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="upload-cloud" class="w-4 h-4 text-brand-600"></i>
+              Data Import
+            </span>
+            <span class="text-[9px] font-mono text-slate-400">CSV Only</span>
+          </div>
+
+          <!-- Tab Headers -->
+          <div class="flex border-b border-slate-200 text-[10px] font-bold">
+            <button id="tab-log-data" class="flex-1 pb-1.5 border-b-2 border-brand-650 text-brand-700 focus:outline-none">Fouling Logs</button>
+            <button id="tab-design-specs" class="flex-1 pb-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-600 focus:outline-none">Design Specs</button>
+          </div>
+
+          <!-- Section A: Log/Fouling Data -->
+          <div id="section-log-data" class="space-y-2">
+            <!-- Drop & Upload Box for Log Data -->
+            <div id="dropzone" class="border-2 border-dashed border-slate-200 hover:border-brand-400 bg-white hover:bg-brand-50/10 p-3 rounded text-center cursor-pointer transition relative">
+              <input type="file" id="csv-file-input" accept=".csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+              <i data-lucide="file-spreadsheet" class="w-5 h-5 text-slate-400 mx-auto mb-1"></i>
+              <p class="text-[10.5px] font-semibold text-slate-600">Drop Fouling CSV here or</p>
+              <p class="text-[10.5px] text-brand-600 font-bold mt-0.5">Browse Files</p>
+            </div>
+            <div class="text-[9px] text-slate-500 leading-normal bg-brand-50/20 p-2 rounded border border-brand-100 border-dashed">
+              <strong>Columns:</strong> <code class="font-mono text-brand-700">Date</code>, <code class="font-mono text-brand-700">Exchanger_ID</code>, <code class="font-mono text-brand-700">Flow_Hot</code>, <code class="font-mono text-brand-700">Tin_Hot</code>...
+            </div>
+          </div>
+
+          <!-- Section B: Design Specifications -->
+          <div id="section-design-specs" class="space-y-2 hidden">
+            <!-- Drop & Upload Box for Design specs -->
+            <div id="dropzone-design" class="border-2 border-dashed border-slate-200 hover:border-brand-400 bg-white hover:bg-brand-50/10 p-3 rounded text-center cursor-pointer transition relative">
+              <input type="file" id="design-csv-file-input" accept=".csv" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
+              <i data-lucide="settings-2" class="w-5 h-5 text-slate-400 mx-auto mb-1"></i>
+              <p class="text-[10.5px] font-semibold text-slate-600">Drop Design Specs here or</p>
+              <p class="text-[10.5px] text-brand-600 font-bold mt-0.5">Browse Files</p>
+            </div>
+            <div class="text-[9px] text-slate-500 leading-normal bg-amber-50/25 p-2 rounded border border-amber-200 border-dashed">
+              <strong>Columns:</strong> <code class="font-mono text-amber-700">Exchanger_ID</code>, <code class="font-mono text-amber-700">U_clean</code>, <code class="font-mono text-amber-700">Area</code>, <code class="font-mono text-amber-700">Rf_critical</code>...
+            </div>
+            <!-- Spec loaded indicator -->
+            <div id="specs-loaded-status" class="bg-emerald-50 text-emerald-800 text-[9.5px] p-2 rounded flex flex-col gap-1.5 border border-emerald-100">
+              <span id="specs-loaded-message" class="font-medium">Using built-in pre-set design specifications.</span>
+              <button id="clear-design-specs-btn" class="w-full text-[9px] border border-slate-200 hover:bg-slate-100 bg-white text-slate-650 font-bold py-1 rounded transition flex items-center justify-center gap-1">
+                <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
+                Reset to Defaults
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Select Exchanger Unit Dropdown -->
+        <div class="space-y-1.5">
+          <label for="exchanger-select" class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+            Exchanger Selection
+          </label>
+          <div class="relative">
+            <select id="exchanger-select" class="w-full pl-2.5 pr-8 py-1.5 bg-white border border-slate-200 rounded text-xs font-medium text-slate-900 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 shadow-sm leading-tight appearance-none cursor-pointer">
+              <option disabled selected>-- Upload CSV or choose a demo --</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-500">
+              <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <hr class="border-slate-100" />
+
+        <!-- 3. Physical Constants Table -->
+        <div class="space-y-1.5">
+          <h4 class="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+            <span>Parameters</span>
+            <span class="text-[9px] text-brand-650 font-bold lowercase tracking-normal">customizable per unit</span>
+          </h4>
+          
+          <!-- Warning block if missing design specs -->
+          <div id="missing-spec-warning" class="hidden bg-amber-50 border border-amber-200 text-amber-800 text-[10.5px] p-2.5 rounded flex items-start gap-1.5 leading-normal shrink-0">
+            <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-650 shrink-0 mt-0.5"></i>
+            <div>
+              <strong class="font-bold">Missing Design Spec!</strong> This Exchanger is not in the design specs database. Fallback parameters applied.
+            </div>
+          </div>
+
+          <div class="bg-slate-50 border border-slate-200 rounded p-2.5 space-y-1.5 text-[11px] font-mono">
+            <div class="flex justify-between items-center py-0.5 border-b border-slate-200/60">
+              <span class="text-slate-500">U_CLEAN <span class="text-[9px] font-sans text-slate-400 font-normal">(W/m²K)</span></span>
+              <input type="number" id="input-u-clean" step="10" min="1" max="10000" class="w-20 px-1 py-0.5 bg-white border border-slate-200 rounded text-right text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            </div>
+            <div class="flex justify-between items-center py-0.5 border-b border-slate-200/60">
+              <span class="text-slate-500">AREA <span class="text-[9px] font-sans text-slate-400 font-normal">(m²)</span></span>
+              <input type="number" id="input-area" step="1" min="0.1" max="20000" class="w-20 px-1 py-0.5 bg-white border border-slate-200 rounded text-right text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            </div>
+            <div class="flex justify-between items-center py-0.5 border-b border-slate-200/60">
+              <span class="text-slate-500">CP_HOT <span class="text-[9px] font-sans text-slate-400 font-normal">(kJ/kg·K)</span></span>
+              <input type="number" id="input-cp-hot" step="0.05" min="0.1" max="10" class="w-20 px-1 py-0.5 bg-white border border-slate-200 rounded text-right text-xs font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            </div>
+            <div class="flex justify-between items-center py-0.5">
+              <span class="text-slate-500 text-[10.5px]">RF_CRITICAL <span class="text-[9px] font-sans text-slate-400 font-normal">(m²K/W)</span></span>
+              <input type="number" id="input-rf-critical" step="0.0005" min="0.0001" max="0.1" class="w-20 px-1 py-0.5 bg-white border border-slate-200 rounded text-right text-xs font-bold text-red-600 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <hr class="border-slate-100" />
+
+        <!-- 4. Thermal & Data Health Status -->
+        <div id="data-health-widget" class="bg-slate-50 border border-slate-200 rounded p-3 space-y-2">
+          <h4 class="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+            <span>Data Integrity Check</span>
+            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-600"></i>
+          </h4>
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="bg-white p-2 rounded border border-slate-200">
+              <div id="health-total-readings" class="text-sm font-mono font-bold text-slate-800">-</div>
+              <div class="text-[9.5px] text-slate-500">Total Records</div>
+            </div>
+            <div class="bg-white p-2 rounded border border-slate-200">
+              <div id="health-crossovers" class="text-sm font-mono font-bold text-emerald-700">-</div>
+              <div class="text-[9.5px] text-slate-500">Errors</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Graph dashboard and table details -->
+      <section class="flex-1 flex flex-col overflow-hidden bg-slate-50/50">
+        <!-- Scrollable Dashboard Contents -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-3.5 space-y-3.5">
+          
+          <!-- Top Row: Real-Time Readout Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            
+            <!-- Card 1: Actual Heat Transfer Coefficient (U_actual) -->
+            <div class="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-slate-400 font-bold text-[9px] uppercase tracking-wider">Heat Transfer Coeff</p>
+                  <p class="text-[10px] text-slate-500 font-mono" id="u-actual-date">-</p>
+                </div>
+                <div class="p-1 px-1.5 bg-cyan-50 border border-cyan-100 rounded text-cyan-600">
+                  <i data-lucide="thermometer" class="w-4 h-4"></i>
+                </div>
+              </div>
+              <div class="mt-2">
+                <div class="flex items-baseline gap-1">
+                  <span id="u-actual-val" class="text-2xl font-mono font-bold text-slate-900 tracking-tight">-</span>
+                  <span class="text-[11px] text-slate-500 font-medium">W/m²K</span>
+                </div>
+                <div id="u-actual-desc" class="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                  <span>-</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 2: Fouling Factor (Rf) -->
+            <div class="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-slate-400 font-bold text-[9px] uppercase tracking-wider">Fouling Resistance (Rf)</p>
+                  <p class="text-[10px] text-slate-500 font-mono" id="rf-date">-</p>
+                </div>
+                <div class="p-1 px-1.5 bg-amber-50 border border-amber-100 rounded text-amber-600">
+                  <i data-lucide="layers" class="w-4 h-4"></i>
+                </div>
+              </div>
+              <div class="mt-2">
+                <div class="flex items-baseline gap-1">
+                  <span id="rf-val" class="text-2xl font-mono font-bold text-slate-900 tracking-tight">-</span>
+                  <span class="text-[11px] text-slate-500 font-medium">m²K/W</span>
+                </div>
+                <!-- Dynamic progress subtext -->
+                <div id="rf-pct-bar-container" class="mt-2 w-full bg-slate-100 rounded-full h-1 overflow-hidden hidden">
+                  <div id="rf-pct-bar" class="bg-brand-500 h-1 rounded-full" style="width: 0%"></div>
+                </div>
+                <div id="rf-desc" class="text-[10px] text-slate-500 mt-1">
+                  -
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 3: Heat Duty (Q) -->
+            <div class="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-slate-400 font-bold text-[9px] uppercase tracking-wider">Thermal Heat Duty (Q)</p>
+                  <p class="text-[10px] text-slate-500 font-mono" id="q-date">-</p>
+                </div>
+                <div class="p-1 px-1.5 bg-rose-50 border border-rose-100 rounded text-rose-600">
+                  <i data-lucide="flame" class="w-4 h-4"></i>
+                </div>
+              </div>
+              <div class="mt-2">
+                <div class="flex items-baseline gap-1">
+                  <span id="q-val" class="text-2xl font-mono font-bold text-slate-900 tracking-tight">-</span>
+                  <span class="text-[11px] text-slate-500 font-medium">MW</span>
+                </div>
+                <div id="q-desc" class="text-[10px] text-slate-500 mt-1">
+                  -
+                </div>
+              </div>
+            </div>
+
+            <!-- Card 4: Predictive Maintenance Warning -->
+            <div id="pm-card" class="border border-slate-200 bg-white rounded-lg p-3.5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px] transition-colors duration-300">
+              <div class="flex justify-between items-start">
+                <div>
+                  <p class="text-slate-400 font-bold text-[9px] uppercase tracking-wider">Predictive Maintenance</p>
+                  <p class="text-[10px] text-slate-400 font-mono">Cleaning Projection</p>
+                </div>
+                <div id="pm-icon-wrapper" class="p-1 px-1.5 bg-slate-50 border border-slate-200 rounded text-slate-600">
+                  <i data-lucide="clock" class="w-4 h-4"></i>
+                </div>
+              </div>
+              <div class="mt-2">
+                <div class="flex items-baseline gap-1">
+                  <span id="pm-days-val" class="text-2.5xl font-mono font-black tracking-tight">-</span>
+                  <span id="pm-days-unit" class="text-[11px] font-semibold text-slate-500">days</span>
+                </div>
+                <div id="pm-desc" class="text-[10px] text-slate-500 mt-1 font-medium leading-normal">
+                  Analyze thermal resistance to trigger linear regression projection.
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Mid Section: Interactive Chart -->
+          <div class="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm flex flex-col">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <i data-lucide="trending-up" class="w-4 h-4 text-brand-600"></i>
+                  Thermodynamic Fouling &amp; Efficiency Dual-Axis Trend
+                </h3>
+                <p class="text-[11px] text-slate-500 mt-0.5">Plotting $U_{actual}$ (energy efficiency) vs. $R_f$ (fouling factor) showing critical fouling limits</p>
+              </div>
+              <!-- Chart Legend indicators / Details -->
+              <div class="flex items-center gap-3 text-[11px] font-mono">
+                <span class="flex items-center gap-1 text-cyan-600">
+                  <span class="w-2.5 h-1.5 rounded bg-cyan-600"></span>
+                  U<sub>act</sub> (W/m²K)
+                </span>
+                <span class="flex items-center gap-1 text-rose-600">
+                  <span class="w-2.5 h-1.5 rounded bg-rose-600"></span>
+                  R<sub>f</sub> (m²K/W)
+                </span>
+                <span class="flex items-center gap-1 text-red-500">
+                  <span class="border-t border-dashed border-red-400 w-3.5"></span>
+                  R<sub>f,crit</sub> (<span id="txt-rf-crit">0.006</span>)
+                </span>
+              </div>
+            </div>
+            
+            <!-- Canvas container -->
+            <div class="relative w-full h-[280px] mt-2.5">
+              <canvas id="fouling-trend-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Bottom Grid: Left Regression breakdown & Right diagnostics historical values table -->
+          <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 pb-2">
+            
+            <!-- Predictive Maintenance Slope Diagnostics Model -->
+            <div class="xl:col-span-4 bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm flex flex-col justify-between space-y-3">
+              <div class="border-b border-slate-100 pb-1.5">
+                <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="drafting-compass" class="w-4 h-4 text-brand-500"></i>
+                  Regression Fit Details
+                </h3>
+                <p class="text-[10px] text-slate-400 mt-0.5">Linear solver evaluated on most recent 30 days</p>
+              </div>
+              
+              <div class="flex-1 space-y-2 py-1">
+                <div class="flex items-center justify-between py-1 bg-slate-50/50 px-2 rounded border border-slate-100 text-[11px]">
+                  <span class="text-slate-500">Regression Window</span>
+                  <span class="font-semibold text-slate-800 font-mono" id="reg-window">30 daily records</span>
+                </div>
+                <div class="flex items-center justify-between py-1 bg-slate-50/50 px-2 rounded border border-slate-100 text-[11px]">
+                  <span class="text-slate-500">Calculated Slope</span>
+                  <span class="font-semibold text-red-600 font-mono" id="reg-slope">-</span>
+                </div>
+                <div class="flex items-center justify-between py-1 bg-slate-50/50 px-2 rounded border border-slate-100 text-[11px]">
+                  <span class="text-slate-500">Intercept (c)</span>
+                  <span class="font-semibold text-slate-800 font-mono" id="reg-intercept">-</span>
+                </div>
+                <div class="flex items-center justify-between py-1 bg-slate-50/50 px-2 rounded border border-slate-100 text-[11px]">
+                  <span class="text-slate-500">Fitted Equation</span>
+                  <span class="font-bold text-brand-700 font-mono" id="reg-equation">Rf(t) = m • t + c</span>
+                </div>
+              </div>
+
+              <div class="text-[9.5px] text-slate-400 leading-normal bg-brand-50/10 border border-brand-100 p-2 rounded flex items-start gap-1.5">
+                <i data-lucide="info" class="w-3.5 h-3.5 text-brand-500 shrink-0 mt-0.5"></i>
+                <span>Projections are modeled continuously to prevent premature shutdowns. Rate units scaled in <span class="font-mono text-slate-600">10⁻⁶ m²K/W</span> per day.</span>
+              </div>
+            </div>
+
+            <!-- Diagnostics historical table -->
+            <div class="xl:col-span-8 bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm flex flex-col min-h-[250px]">
+              <div class="flex justify-between items-center border-b border-slate-100 pb-2 mb-2">
+                <div>
+                  <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="table-properties" class="w-4 h-4 text-slate-500"></i>
+                    Recent Log Entries &amp; Thermodiagnostics
+                  </h3>
+                  <p class="text-[10px] text-slate-400 mt-0.5">Displaying the most recent 10 sequential operational datums</p>
+                </div>
+                <span class="text-[10px] bg-slate-100 px-2 py-0.5 text-slate-500 rounded font-mono" id="table-record-count">0 items</span>
+              </div>
+
+              <!-- Scrolling container for table -->
+              <div class="flex-1 overflow-x-auto overflow-y-auto max-h-[180px] custom-scrollbar border border-slate-200 rounded">
+                <table class="w-full text-[11px] text-left min-w-[700px]">
+                  <thead class="bg-slate-50/90 sticky top-0 text-slate-500 font-bold border-b border-slate-200">
+                    <tr>
+                      <th class="p-1.5 px-2">Date</th>
+                      <th class="p-1.5 px-2 text-right">Flow (kg/s)</th>
+                      <th class="p-1.5 px-2 text-center">Temp Hot (°C)</th>
+                      <th class="p-1.5 px-2 text-center">Temp Cold (°C)</th>
+                      <th class="p-1.5 px-2 text-right">LMTD (°C)</th>
+                      <th class="p-1.5 px-2 text-right">Q (MW)</th>
+                      <th class="p-1.5 px-2 text-right text-cyan-600">U<sub>act</sub> (W/m²K)</th>
+                      <th class="p-1.5 px-2 text-right text-rose-600">R<sub>f</sub> (m²K/W)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="diagnostic-tbody" class="divide-y divide-slate-100 font-mono text-[10.5px] text-slate-700">
+                    <!-- Dynamic entries appended here -->
+                    <tr>
+                      <td colspan="8" class="text-center py-6 text-xs text-slate-400 font-sans">No data active. Select a pre-set or load a dataset.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+    </main>
+
+    <!-- Page Footer -->
+    <footer class="bg-white border-t border-slate-200 shrink-0 px-4 py-2 flex flex-col sm:flex-row justify-between items-center gap-1.5 text-[10.5px] text-slate-400">
+      <div>Pre-Heat Train Fouling Predictor • Process Engineering Analytical Tool</div>
+      <div>Standard clean heat coefficient (U_clean) baseline established at 300.0 W/m²K</div>
+    </footer>
+
+    <!-- Core Business & Operational Logic JS -->
+    <script>
+      // Thermodynamics constants (Default per Exchanger ID)
+      const DEFAULT_EXCHANGER_PARAMS = {
+        "E-101A (Crude Pre-Heater)": { uClean: 300.0, area: 150.0, cpHot: 2.1, rfCritical: 0.0060 },
+        "E-101B (Vacuum Distillate)": { uClean: 250.0, area: 120.0, cpHot: 2.2, rfCritical: 0.0050 },
+        "E-101C (Vent Condenser)": { uClean: 180.0, area: 80.0, cpHot: 1.9, rfCritical: 0.0080 }
+      };
+
+      // Current in-memory custom overrides per Exchanger ID
+      let exchangerParams = {};
+      let uploadedDesignExchangers = {}; // id -> true if loaded from uploaded design specs CSV
+
+      function loadExchangerParams() {
+        const cached = localStorage.getItem("fouling_exchanger_params");
+        if (cached) {
+          try {
+            exchangerParams = JSON.parse(cached);
+          } catch(e) {
+            console.error("Failed to parse cached exchanger parameters, using defaults.", e);
+            exchangerParams = {};
+          }
+        } else {
+          exchangerParams = {};
+        }
+
+        const cachedSources = localStorage.getItem("fouling_uploaded_design_exchangers");
+        if (cachedSources) {
+          try {
+            uploadedDesignExchangers = JSON.parse(cachedSources);
+          } catch(e) {
+            console.error("Failed to parse cached design sources, resetting.", e);
+            uploadedDesignExchangers = {};
+          }
+        } else {
+          uploadedDesignExchangers = {};
+        }
+
+        updateSpecsIndicatorMessage();
+      }
+
+      function updateSpecsIndicatorMessage() {
+        const specsMessage = document.getElementById("specs-loaded-message");
+        if (!specsMessage) return;
+        const count = Object.keys(uploadedDesignExchangers).length;
+        if (count > 0) {
+          specsMessage.textContent = `Active design specs loaded for ${count} unit(s) from CSV.`;
+        } else {
+          specsMessage.textContent = "Using built-in pre-set design specifications.";
+        }
+      }
+
+      function hasVerifiedDesignSpec(id) {
+        if (!id) return true;
+        const hasUploadedSpecs = Object.keys(uploadedDesignExchangers).length > 0;
+        if (hasUploadedSpecs) {
+          return !!uploadedDesignExchangers[id];
+        }
+        return !!DEFAULT_EXCHANGER_PARAMS[id];
+      }
+
+      function getParamsForExchanger(id) {
+        if (!id) return { uClean: 300.0, area: 150.0, cpHot: 2.1, rfCritical: 0.0060 };
+        if (exchangerParams[id]) {
+          return exchangerParams[id];
+        }
+        if (DEFAULT_EXCHANGER_PARAMS[id]) {
+          return { ...DEFAULT_EXCHANGER_PARAMS[id] };
+        }
+        return { uClean: 300.0, area: 150.0, cpHot: 2.1, rfCritical: 0.0060 };
+      }
+
+      function saveParamsForExchanger(id, params) {
+        exchangerParams[id] = params;
+        localStorage.setItem("fouling_exchanger_params", JSON.stringify(exchangerParams));
+      }
+
+      // Program state
+      let rawData = [];
+      let groupedExchangerData = {};
+      let activeExchangerId = "";
+      let activeCalculonData = []; // calculated metrics row-by-row
+      let foulingChart = null;
+
+      // On Initial Window Loading
+      window.addEventListener("DOMContentLoaded", () => {
+        // Render assets and icons
+        lucide.createIcons();
+        loadExchangerParams();
+        initEventListeners();
+        
+        // Populate Demo Data on launch if localStorage is completely blank, else load cache
+        const cached = localStorage.getItem("fouling_exchanger_data");
+        if (cached) {
+          try {
+            rawData = JSON.parse(cached);
+            groupAndProcessData(rawData);
+          } catch(e) {
+            console.error("Local Storage parsing failed, loading fresh presets.", e);
+            toggleBanner("Corrupt dashboard cache cleared. Reloading original presets...", true);
+            loadPresetDemoData();
+          }
+        } else {
+          loadPresetDemoData();
+        }
+      });
+
+      // 1. Initialise UI triggers and events
+      function initEventListeners() {
+        // Dropdown changes
+        const select = document.getElementById("exchanger-select");
+        select.addEventListener("change", (e) => {
+          activeExchangerId = e.target.value;
+          renderActiveDashboard();
+        });
+
+        // Interactive Preset Selector click
+        document.getElementById("reset-demo-btn").addEventListener("click", () => {
+          loadPresetDemoData();
+          toggleBanner("Loaded nominal pre-heat train demo datasets. Click dropdown to change units.");
+        });
+
+        // Sample CSV template builders
+        document.getElementById("download-template-btn").addEventListener("click", generateAndDownloadSampleCsv);
+        const downloadDesignBtn = document.getElementById("download-design-template-btn");
+        if (downloadDesignBtn) {
+          downloadDesignBtn.addEventListener("click", generateAndDownloadDesignTemplateCsv);
+        }
+
+        // Tab switching
+        const tabLog = document.getElementById("tab-log-data");
+        const tabDesign = document.getElementById("tab-design-specs");
+        const secLog = document.getElementById("section-log-data");
+        const secDesign = document.getElementById("section-design-specs");
+
+        if (tabLog && tabDesign) {
+          tabLog.addEventListener("click", () => {
+            tabLog.className = "flex-1 pb-1.5 border-b-2 border-brand-650 text-brand-700 focus:outline-none text-center";
+            tabDesign.className = "flex-1 pb-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-600 focus:outline-none text-center";
+            secLog.classList.remove("hidden");
+            secDesign.classList.add("hidden");
+          });
+
+          tabDesign.addEventListener("click", () => {
+            tabDesign.className = "flex-1 pb-1.5 border-b-2 border-brand-650 text-brand-700 focus:outline-none text-center";
+            tabLog.className = "flex-1 pb-1.5 border-b-2 border-transparent text-slate-400 hover:text-slate-600 focus:outline-none text-center";
+            secDesign.classList.remove("hidden");
+            secLog.classList.add("hidden");
+          });
+        }
+
+        // File uploader & parsing
+        const fileInput = document.getElementById("csv-file-input");
+        fileInput.addEventListener("change", handleFileSelection);
+
+        // Styling drag and drop interactive events
+        const dropzone = document.getElementById("dropzone");
+        dropzone.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          dropzone.classList.remove("border-slate-200");
+          dropzone.classList.add("border-brand-500", "bg-brand-50/10");
+        });
+
+        dropzone.addEventListener("dragleave", () => {
+          dropzone.classList.remove("border-brand-500", "bg-brand-50/10");
+          dropzone.classList.add("border-slate-200");
+        });
+
+        dropzone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          dropzone.classList.remove("border-brand-500", "bg-brand-50/10");
+          dropzone.classList.add("border-slate-200");
+          if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            handleFileSelection();
+          }
+        });
+
+        // Design Specs file uploader & drag/drop
+        const designFileInput = document.getElementById("design-csv-file-input");
+        if (designFileInput) {
+          designFileInput.addEventListener("change", handleDesignFileSelection);
+        }
+
+        const dropzoneDesign = document.getElementById("dropzone-design");
+        if (dropzoneDesign && designFileInput) {
+          dropzoneDesign.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            dropzoneDesign.classList.remove("border-slate-200");
+            dropzoneDesign.classList.add("border-brand-500", "bg-brand-50/10");
+          });
+
+          dropzoneDesign.addEventListener("dragleave", () => {
+            dropzoneDesign.classList.remove("border-brand-500", "bg-brand-50/10");
+            dropzoneDesign.classList.add("border-slate-200");
+          });
+
+          dropzoneDesign.addEventListener("drop", (e) => {
+            e.preventDefault();
+            dropzoneDesign.classList.remove("border-brand-500", "bg-brand-50/10");
+            dropzoneDesign.classList.add("border-slate-200");
+            if (e.dataTransfer.files.length > 0) {
+              designFileInput.files = e.dataTransfer.files;
+              handleDesignFileSelection();
+            }
+          });
+        }
+
+        // Reset custom overrides button
+        const clearDesignBtn = document.getElementById("clear-design-specs-btn");
+        if (clearDesignBtn) {
+          clearDesignBtn.addEventListener("click", () => {
+            exchangerParams = {};
+            uploadedDesignExchangers = {};
+            localStorage.removeItem("fouling_exchanger_params");
+            localStorage.removeItem("fouling_uploaded_design_exchangers");
+            
+            groupAndProcessData(rawData);
+            updateSpecsIndicatorMessage();
+            toggleBanner("Reverted design specifications database to built-in presets.");
+          });
+        }
+
+        // Parameters input updates
+        ["input-u-clean", "input-area", "input-cp-hot", "input-rf-critical"].forEach(id => {
+          document.getElementById(id).addEventListener("input", () => {
+            handleParameterChange();
+          });
+        });
+      }
+
+      // Handle interactive side inputs customization
+      function handleParameterChange() {
+        if (!activeExchangerId) return;
+        const uClean = parseFloat(document.getElementById("input-u-clean").value) || 300.0;
+        const area = parseFloat(document.getElementById("input-area").value) || 150.0;
+        const cpHot = parseFloat(document.getElementById("input-cp-hot").value) || 2.1;
+        const rfCritical = parseFloat(document.getElementById("input-rf-critical").value) || 0.006;
+
+        saveParamsForExchanger(activeExchangerId, { uClean, area, cpHot, rfCritical });
+        renderActiveDashboard();
+      }
+
+      // Handle CSV select uploading via PapaParse
+      function handleFileSelection() {
+        const fileInput = document.getElementById("csv-file-input");
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: function(results) {
+            validateAndImportCsv(results.data);
+          },
+          error: function(err) {
+            toggleBanner("File failed parsing: " + err, true);
+          }
+        });
+      }
+
+      // Validate parsed columns strictly
+      function validateAndImportCsv(dataRows) {
+        if (!dataRows || dataRows.length === 0) {
+          toggleBanner("The CSV appears to be empty or incomplete.", true);
+          return;
+        }
+
+        const requiredCols = ["Date", "Exchanger_ID", "Flow_Hot", "Tin_Hot", "Tout_Hot", "Tin_Cold", "Tout_Cold"];
+        const firstRow = dataRows[0];
+        const missing = requiredCols.filter(c => !(c in firstRow));
+
+        if (missing.length > 0) {
+          toggleBanner("Failed importing: Missing required columns in CSV: " + missing.join(", "), true);
+          return;
+        }
+
+        // CSV parsing OK, overwrite
+        rawData = dataRows;
+        localStorage.setItem("fouling_exchanger_data", JSON.stringify(rawData));
+        
+        groupAndProcessData(rawData);
+        toggleBanner("Successfully imported " + dataRows.length + " rows. Chart and models re-evaluated.");
+      }
+
+      // Group full data set by Exchanger_ID
+      function groupAndProcessData(rows) {
+        groupedExchangerData = {};
+        
+        rows.forEach(r => {
+          const id = r.Exchanger_ID;
+          if (!id) return;
+          if (!groupedExchangerData[id]) {
+            groupedExchangerData[id] = [];
+          }
+          groupedExchangerData[id].push({
+            Date: r.Date.trim(),
+            Flow_Hot: parseFloat(r.Flow_Hot),
+            Tin_Hot: parseFloat(r.Tin_Hot),
+            Tout_Hot: parseFloat(r.Tout_Hot),
+            Tin_Cold: parseFloat(r.Tin_Cold),
+            Tout_Cold: parseFloat(r.Tout_Cold)
+          });
+        });
+
+        // Populate dropdown
+        const select = document.getElementById("exchanger-select");
+        select.innerHTML = ""; // Clear existing
+
+        const ids = Object.keys(groupedExchangerData);
+        if (ids.length === 0) {
+          toggleBanner("No valid Exchanger IDs identified.", true);
+          return;
+        }
+
+        ids.forEach(id => {
+          const opt = document.createElement("option");
+          opt.value = id;
+          const hasSpec = hasVerifiedDesignSpec(id);
+          opt.textContent = (hasSpec ? "" : "⚠️ ") + id;
+          select.appendChild(opt);
+        });
+
+        // Check if selected ID exists in the newly loaded list, or fall back to the first one
+        if (ids.includes(activeExchangerId)) {
+          select.value = activeExchangerId;
+        } else {
+          activeExchangerId = ids[0];
+          select.value = activeExchangerId;
+        }
+
+        renderActiveDashboard();
+      }
+
+      // Load Preset Demo Data
+      function loadPresetDemoData() {
+        const demoDataset = generatePresetDemoData();
+        rawData = demoDataset;
+        localStorage.setItem("fouling_exchanger_data", JSON.stringify(demoDataset));
+        groupAndProcessData(demoDataset);
+      }
+
+      // Build out full demo programmatically
+      function generatePresetDemoData() {
+        const data = [];
+        const startDate = new Date(2026, 1, 15); // February 15, 2026
+        
+        for (let day = 0; day < 120; day++) {
+          const currentDate = new Date(startDate);
+          currentDate.setDate(startDate.getDate() + day);
+          const dateString = currentDate.toISOString().split('T')[0];
+          
+          // Noise helper
+          const noise = () => (Math.random() - 0.5);
+          
+          // 1. Exchanger E-101A: Fast-Fouling Crude Pre-Heater
+          const f_noise_a = Math.sin(day * 0.15) * 0.4 + noise() * 0.15;
+          const flow_a = 21.5 + f_noise_a;
+          const tin_h_a = 282.0 + noise() * 0.6;
+          const tin_c_a = 128.0 + noise() * 0.5;
+          
+          // Progressive degradation trend
+          const progress_a = day / 120;
+          const tout_h_a = 202.0 + (38.0 * progress_a) + noise() * 0.4;
+          const tout_c_a = 191.0 - (33.0 * progress_a) + noise() * 0.4;
+          
+          data.push({
+            Date: dateString,
+            Exchanger_ID: "E-101A (Crude Pre-Heater)",
+            Flow_Hot: flow_a.toFixed(1),
+            Tin_Hot: tin_h_a.toFixed(1),
+            Tout_Hot: tout_h_a.toFixed(1),
+            Tin_Cold: tin_c_a.toFixed(1),
+            Tout_Cold: tout_c_a.toFixed(1)
+          });
+          
+          // 2. Exchanger E-101B: Moderate-Fouling Vacuum Distillate
+          const f_noise_b = Math.sin(day * 0.1) * 0.3 + noise() * 0.1;
+          const flow_b = 24.0 + f_noise_b;
+          const tin_h_b = 258.0 + noise() * 0.4;
+          const tin_c_b = 112.5 + noise() * 0.3;
+          
+          const progress_b = day / 120;
+          const tout_h_b = 184.0 + (16.5 * progress_b) + noise() * 0.3;
+          const tout_c_b = 172.0 - (15.0 * progress_b) + noise() * 0.3;
+          
+          data.push({
+            Date: dateString,
+            Exchanger_ID: "E-101B (Vacuum Distillate)",
+            Flow_Hot: flow_b.toFixed(1),
+            Tin_Hot: tin_h_b.toFixed(1),
+            Tout_Hot: tout_h_b.toFixed(1),
+            Tin_Cold: tin_c_b.toFixed(1),
+            Tout_Cold: tout_c_b.toFixed(1)
+          });
+          
+          // 3. Exchanger E-101C: Healthy / Stable Vent Economizer
+          const flow_c = 14.8 + noise() * 0.25;
+          const tin_h_c = 219.0 + noise() * 0.3;
+          const tin_c_c = 89.5 + noise() * 0.3;
+          
+          const progress_c = day / 120;
+          const tout_h_c = 152.0 + (1.2 * progress_c) + noise() * 0.2;
+          const tout_c_c = 143.5 - (1.1 * progress_c) + noise() * 0.2;
+          
+          data.push({
+            Date: dateString,
+            Exchanger_ID: "E-101C (Vent Condenser)",
+            Flow_Hot: flow_c.toFixed(1),
+            Tin_Hot: tin_h_c.toFixed(1),
+            Tout_Hot: tout_h_c.toFixed(1),
+            Tin_Cold: tin_c_c.toFixed(1),
+            Tout_Cold: tout_c_c.toFixed(1)
+          });
+        }
+        return data;
+      }
+
+      // Execute dynamic analytics and render panels
+      function renderActiveDashboard() {
+        if (!activeExchangerId || !groupedExchangerData[activeExchangerId]) {
+          return;
+        }
+
+        const events = groupedExchangerData[activeExchangerId];
+        // Sort chronologically
+        events.sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+        // Get dynamic parameters for this active exchanger
+        const params = getParamsForExchanger(activeExchangerId);
+        const uClean_val = params.uClean;
+        const area_val = params.area;
+        const cpHot_val = params.cpHot;
+        const rfCritical_val = params.rfCritical;
+
+        // Feed parameter values back into input boxes if user is not editing them right now
+        if (document.activeElement !== document.getElementById("input-u-clean")) {
+          document.getElementById("input-u-clean").value = uClean_val;
+        }
+        if (document.activeElement !== document.getElementById("input-area")) {
+          document.getElementById("input-area").value = area_val;
+        }
+        if (document.activeElement !== document.getElementById("input-cp-hot")) {
+          document.getElementById("input-cp-hot").value = cpHot_val;
+        }
+        if (document.activeElement !== document.getElementById("input-rf-critical")) {
+          document.getElementById("input-rf-critical").value = rfCritical_val;
+        }
+
+        // Toggle visual alert controls based on missing specs check
+        const hasSpec = hasVerifiedDesignSpec(activeExchangerId);
+        const warningCard = document.getElementById("missing-spec-warning");
+        if (warningCard) {
+          if (hasSpec) {
+            warningCard.classList.add("hidden");
+          } else {
+            warningCard.classList.remove("hidden");
+          }
+        }
+
+        // Apply highlights for missing specifications
+        const inputIds = ["input-u-clean", "input-area", "input-cp-hot", "input-rf-critical"];
+        inputIds.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            if (hasSpec) {
+              el.classList.remove("border-amber-300", "bg-amber-50/20", "focus:ring-amber-500", "text-amber-700");
+              el.classList.add("border-slate-200", "bg-white", "focus:ring-brand-500");
+            } else {
+              el.classList.remove("border-slate-200", "bg-white", "focus:ring-brand-500");
+              el.classList.add("border-amber-300", "bg-amber-50/20", "focus:ring-amber-500", "text-amber-700");
+            }
+          }
+        });
+
+        // Update Chart Legend RF CRIT label
+        document.getElementById("txt-rf-crit").textContent = rfCritical_val.toFixed(4);
+
+        // Compute thermodynamic calculations for each point
+        let totalRecordsCounter = events.length;
+        let crossoverErrorCounter = 0;
+        activeCalculonData = [];
+
+        events.forEach((row) => {
+          // Temperature diffs
+          const dT1 = row.Tin_Hot - row.Tout_Cold;
+          const dT2 = row.Tout_Hot - row.Tin_Cold;
+
+          let lmtd = NaN;
+          let thermodynamicErrorOccured = false;
+
+          if (dT1 <= 0 || dT2 <= 0) {
+            thermodynamicErrorOccured = true;
+            crossoverErrorCounter++;
+          } else {
+            if (Math.abs(dT1 - dT2) < 1e-4) {
+              lmtd = dT1;
+            } else {
+              lmtd = (dT1 - dT2) / Math.log(dT1 / dT2);
+            }
+          }
+
+          // Heat duty: Q = m_dot * Cp * delta T (hot)
+          // units: flow in kg/s, Cp in kJ/kg.K, delta T inside K. Q is in kW.
+          const q_kW = row.Flow_Hot * cpHot_val * (row.Tin_Hot - row.Tout_Hot);
+          const q_MW = q_kW / 1000.0;
+
+          // Process heat transfer, U_actual = Q_watts / (Area * LMTD)
+          let u_actual = NaN;
+          let rf = NaN;
+
+          if (!thermodynamicErrorOccured && lmtd > 0 && q_kW > 0) {
+            u_actual = (q_kW * 1000.0) / (area_val * lmtd);
+            // Rf = 1/U_actual - 1/U_clean
+            rf = (1.0 / u_actual) - (1.0 / uClean_val);
+            
+            // Avoid extreme numerical spikes or negative values if exchanger actually works slightly better than our nominal Clean baseline
+            if (u_actual > 10000) u_actual = 10000;
+            if (rf < -0.05) rf = -0.05;
+          } else {
+            thermodynamicErrorOccured = true;
+          }
+
+          activeCalculonData.push({
+            Date: row.Date,
+            Flow_Hot: row.Flow_Hot,
+            Tin_Hot: row.Tin_Hot,
+            Tout_Hot: row.Tout_Hot,
+            Tin_Cold: row.Tin_Cold,
+            Tout_Cold: row.Tout_Cold,
+            dT1: dT1,
+            dT2: dT2,
+            LMTD: lmtd,
+            Q: q_MW,
+            U_actual: u_actual,
+            Rf: rf,
+            hasError: thermodynamicErrorOccured
+          });
+        });
+
+        // Filter valid parsed logs for linear predictive engine
+        const validCalculations = activeCalculonData.filter(d => !d.hasError);
+
+        // Update data health widget
+        document.getElementById("health-total-readings").textContent = totalRecordsCounter;
+        const errorWidget = document.getElementById("health-crossovers");
+        errorWidget.textContent = crossoverErrorCounter;
+        if (crossoverErrorCounter > 0) {
+          errorWidget.className = "text-base font-mono font-bold text-amber-600";
+        } else {
+          errorWidget.className = "text-base font-mono font-bold text-emerald-600";
+        }
+
+        // Get matching latest record
+        if (validCalculations.length === 0) {
+          toggleBanner("Warning: All dates failed thermodynamic properties (Temperature Crossover indices grid NaN). Check dataset values.", true);
+          renderEmptyState();
+          return;
+        }
+
+        const latestRecord = validCalculations[validCalculations.length - 1];
+
+        // Fill Live readout card 1: U_actual
+        document.getElementById("u-actual-val").textContent = latestRecord.U_actual.toFixed(1);
+        document.getElementById("u-actual-date").textContent = latestRecord.Date;
+        const uCleanPct = ((latestRecord.U_actual / uClean_val) * 100).toFixed(0);
+        document.getElementById("u-actual-desc").innerHTML = `
+          <span class="inline-flex items-center text-xs font-semibold ${latestRecord.U_actual < (uClean_val * 0.4) ? 'text-rose-600':'text-emerald-600'}">
+            ${uCleanPct}% of Clean Baseline
+          </span>
+        `;
+
+        // Fill Live readout card 2: Rf
+        document.getElementById("rf-val").textContent = latestRecord.Rf.toFixed(5);
+        document.getElementById("rf-date").textContent = latestRecord.Date;
+        const rfPct = Math.min(((latestRecord.Rf / rfCritical_val) * 100), 100);
+        document.getElementById("rf-pct-bar-container").classList.remove("hidden");
+        const bar = document.getElementById("rf-pct-bar");
+        bar.style.width = rfPct + "%";
+        if (rfPct > 80) {
+          bar.className = "bg-rose-500 h-1.5 rounded-full";
+        } else if (rfPct > 50) {
+          bar.className = "bg-amber-500 h-1.5 rounded-full";
+        } else {
+          bar.className = "bg-emerald-500 h-1.5 rounded-full";
+        }
+        document.getElementById("rf-desc").innerHTML = `
+          <span class="font-semibold text-slate-500">Threshold:</span>
+          <span class="font-mono text-slate-700">${(rfPct).toFixed(1)}% / Critical</span>
+        `;
+
+        // Fill Live readout card 3: Heat Duty MW
+        document.getElementById("q-val").textContent = latestRecord.Q.toFixed(2);
+        document.getElementById("q-date").textContent = latestRecord.Date;
+        document.getElementById("q-desc").innerHTML = `
+          <span class="text-slate-500 flex items-center gap-1">
+            <i data-lucide="droplet" class="w-3.5 h-3.5 text-brand-400"></i>
+            Mass Flow: ${latestRecord.Flow_Hot.toFixed(1)} kg/s
+          </span>
+        `;
+
+        // PM Linear regression and action card 4
+        // Get last 30 data points
+        const subsetSize = Math.min(validCalculations.length, 30);
+        const regressionSubset = validCalculations.slice(-subsetSize);
+        const ySeries = regressionSubset.map(d => d.Rf);
+        
+        let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+        const n = ySeries.length;
+        
+        for (let i = 0; i < n; i++) {
+          sumX += i;
+          sumY += ySeries[i];
+          sumXY += i * ySeries[i];
+          sumXX += i * i;
+        }
+
+        const denominator = (n * sumXX - sumX * sumX);
+        let slope = 0;
+        let intercept = 0;
+
+        if (n >= 2 && denominator !== 0) {
+          slope = (n * sumXY - sumX * sumY) / denominator;
+          intercept = (sumY - slope * sumX) / n;
+        } else {
+          slope = 0;
+          intercept = ySeries[0] || 0;
+        }
+
+        // Remaining Days calculation to rfCritical_val
+        const currentRfVal = ySeries[n - 1];
+        let remainingDays = parseFloat("Infinity");
+
+        if (currentRfVal >= rfCritical_val) {
+          remainingDays = 0;
+        } else if (slope > 0) {
+          remainingDays = (rfCritical_val - currentRfVal) / slope;
+        }
+
+        // Handle card styling and details in UI
+        const pmCard = document.getElementById("pm-card");
+        const pmLabel = document.getElementById("pm-days-val");
+        const pmUnit = document.getElementById("pm-days-unit");
+        const pmDesc = document.getElementById("pm-desc");
+        const pmIconDiv = document.getElementById("pm-icon-wrapper");
+
+        // Clear dynamic icons to generate fresh inside PM
+        pmIconDiv.innerHTML = "";
+
+        if (currentRfVal >= rfCritical_val) {
+          pmCard.style.backgroundColor = "#fff1f2"; // Rose 50
+          pmCard.style.borderColor = "#fecdd3"; // Rose 200
+          pmLabel.textContent = "ALARM";
+          pmLabel.className = "text-2.5xl font-mono font-black text-rose-700 leading-none";
+          pmUnit.textContent = "";
+          pmDesc.innerHTML = `<span class="text-rose-700 font-bold">Fouling exceeded Limit!</span> Unscheduled shut down and exchanger purging is required immediately.`;
+          pmIconDiv.innerHTML = `<i data-lucide="alert-octagon" class="w-5 h-5 text-rose-600"></i>`;
+        } else if (remainingDays === parseFloat("Infinity") || slope <= 0) {
+          pmCard.style.backgroundColor = "#f0fdf4"; // Green 50
+          pmCard.style.borderColor = "#bbf7d0"; // Green 200
+          pmLabel.textContent = "STABLE";
+          pmLabel.className = "text-2.5xl font-mono font-black text-emerald-700 leading-none";
+          pmUnit.textContent = "";
+          pmDesc.innerHTML = `<span class="text-emerald-700 font-bold">Fouling level nominal.</span> Negligible or negative thermal growth. No scheduled cleaning required.`;
+          pmIconDiv.innerHTML = `<i data-lucide="shield" class="w-5 h-5 text-emerald-600"></i>`;
+        } else {
+          pmLabel.textContent = Math.round(remainingDays);
+          pmLabel.className = "text-3.5xl font-mono font-black text-slate-900 tracking-tight";
+          pmUnit.textContent = "days";
+          
+          if (remainingDays < 30) {
+            pmCard.style.backgroundColor = "#fff1f2"; // Rose 50
+            pmCard.style.borderColor = "#fecdd3"; // Rose 200
+            pmDesc.innerHTML = `<span class="text-rose-700 font-bold">CRITICAL: Cleaning due soon.</span> Fouling growing at <span class="font-mono">${(slope * 1e6).toFixed(1)}e-6</span> / day. Schedule immediate pre-heat wash.`;
+            pmIconDiv.innerHTML = `<i data-lucide="alert-triangle" class="w-5 h-5 text-rose-600"></i>`;
+          } else if (remainingDays < 90) {
+            pmCard.style.backgroundColor = "#fef9c3"; // Yellow 100
+            pmCard.style.borderColor = "#fef08a"; // Yellow 200
+            pmDesc.innerHTML = `<span class="text-amber-800 font-bold">WARNING: Under Watch bounds.</span> Unit estimated to cross critical threshold in ${(remainingDays / 30.5).toFixed(1)} months.`;
+            pmIconDiv.innerHTML = `<i data-lucide="bell" class="w-5 h-5 text-amber-600"></i>`;
+          } else {
+            pmCard.style.backgroundColor = "#f0fdf4"; // Green 50
+            pmCard.style.borderColor = "#bbf7d0"; // Green 200
+            pmDesc.innerHTML = `<span class="text-emerald-700 font-bold">Unit operation HEALTHY.</span> Steady-state thermodynamic balance within permissible lifespan.`;
+            pmIconDiv.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5 text-emerald-600"></i>`;
+          }
+        }
+
+        // Fill Regression analysis sidebar model
+        document.getElementById("reg-window").textContent = `${n} entries (last 30 days)`;
+        document.getElementById("reg-slope").textContent = `${(slope * 1000000).toFixed(3)} × 10⁻⁶`;
+        document.getElementById("reg-intercept").textContent = intercept.toFixed(6);
+        document.getElementById("reg-equation").innerHTML = `R<sub>f</sub>(t) = ${(slope * 1e6).toFixed(2)}e-6 • t + ${intercept.toFixed(5)}`;
+
+        // Redraw interactive diagnostics logs history table
+        const tbody = document.getElementById("diagnostic-tbody");
+        tbody.innerHTML = "";
+
+        // Get most recent 10 logs
+        const tableLogs = activeCalculonData.slice(-10).reverse();
+        document.getElementById("table-record-count").textContent = `${totalRecordsCounter} logs parsed`;
+
+        tableLogs.forEach((log) => {
+          const tr = document.createElement("tr");
+          tr.className = "hover:bg-slate-50 transition-colors";
+          
+          if (log.hasError) {
+            tr.innerHTML = `
+              <td class="p-1.5 px-2 text-slate-900 border-b border-slate-100">${log.Date}</td>
+              <td class="p-1.5 px-2 text-right text-slate-900 border-b border-slate-100">${log.Flow_Hot ? log.Flow_Hot.toFixed(1) : '-'}</td>
+              <td class="p-1.5 px-2 text-center text-slate-500 border-b border-slate-100">${log.Tin_Hot ? log.Tin_Hot.toFixed(0) : '-'} → ${log.Tout_Hot ? log.Tout_Hot.toFixed(0) : '-'}</td>
+              <td class="p-1.5 px-2 text-center text-slate-500 border-b border-slate-100">${log.Tin_Cold ? log.Tin_Cold.toFixed(0) : '-'} → ${log.Tout_Cold ? log.Tout_Cold.toFixed(0) : '-'}</td>
+              <td colspan="4" class="p-1.5 px-2 text-center border-b border-slate-100">
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                  <i data-lucide="alert-circle" class="w-3 h-3 mr-1"></i> Sensor Error / Crossover NaN
+                </span>
+              </td>
+            `;
+          } else {
+            tr.innerHTML = `
+              <td class="p-1.5 px-2 font-medium text-slate-900 border-b border-slate-100">${log.Date}</td>
+              <td class="p-1.5 px-2 text-right text-slate-700 border-b border-slate-100">${log.Flow_Hot.toFixed(1)}</td>
+              <td class="p-1.5 px-2 text-center text-slate-500 border-b border-slate-100">${log.Tin_Hot.toFixed(0)} <span class="text-[10px] text-slate-400">→</span> ${log.Tout_Hot.toFixed(0)}</td>
+              <td class="p-1.5 px-2 text-center text-slate-500 border-b border-slate-100">${log.Tin_Cold.toFixed(0)} <span class="text-[10px] text-slate-400">→</span> ${log.Tout_Cold.toFixed(0)}</td>
+              <td class="p-1.5 px-2 text-right border-b border-slate-100 font-semibold">${log.LMTD.toFixed(1)}</td>
+              <td class="p-1.5 px-2 text-right border-b border-slate-100 font-semibold text-orange-600">${log.Q.toFixed(2)}</td>
+              <td class="p-1.5 px-2 text-right border-b border-slate-100 text-cyan-600 font-bold">${Math.round(log.U_actual)}</td>
+              <td class="p-1.5 px-2 text-right border-b border-slate-100 text-rose-600 font-bold">${log.Rf.toFixed(5)}</td>
+            `;
+          }
+          tbody.appendChild(tr);
+        });
+
+        // Regenerate lucide layout structures for appended items
+        lucide.createIcons();
+
+        // Rebuild Chart metrics
+        renderChartDiagnostics(activeCalculonData);
+      }
+
+      // Handle raw empty fallback views
+      function renderEmptyState() {
+        document.getElementById("u-actual-val").textContent = "-";
+        document.getElementById("rf-val").textContent = "-";
+        document.getElementById("q-val").textContent = "-";
+        document.getElementById("pm-days-val").textContent = "-";
+        document.getElementById("pm-days-unit").textContent = "";
+        document.getElementById("pm-desc").textContent = "No valid data parameters.";
+        document.getElementById("diagnostic-tbody").innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center py-8 text-xs text-slate-400 font-sans">Thermodynamic failure detected on current unit.</td>
+          </tr>
+        `;
+        if (foulingChart) {
+          foulingChart.destroy();
+          foulingChart = null;
+        }
+      }
+
+      // Main Chart.js Dual Axis plotting system
+      function renderChartDiagnostics(dataSeries) {
+        const ctx = document.getElementById("fouling-trend-chart").getContext("2d");
+        
+        if (foulingChart) {
+          foulingChart.destroy();
+        }
+
+        // Align arrays map
+        const labels = dataSeries.map(d => d.Date);
+        const uActualSeries = dataSeries.map(d => d.hasError ? null : d.U_actual);
+        const rfSeries = dataSeries.map(d => d.hasError ? null : d.Rf);
+
+        foulingChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'U_actual (W/m²K)',
+                data: uActualSeries,
+                borderColor: '#2563eb', // Blue-600
+                backgroundColor: 'rgba(37, 99, 235, 0.05)',
+                borderWidth: 2,
+                pointRadius: 2,
+                pointHoverRadius: 6,
+                tension: 0.1,
+                yAxisID: 'yEfficiency'
+              },
+              {
+                label: 'Rf (m²K/W)',
+                data: rfSeries,
+                borderColor: '#e11d48', // Rose-600
+                backgroundColor: 'transparent',
+                borderWidth: 2.2,
+                pointRadius: 2,
+                pointHoverRadius: 6,
+                tension: 0.1,
+                yAxisID: 'yFouling'
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              mode: 'index',
+              intersect: false,
+            },
+            plugins: {
+              legend: {
+                display: false // We render custom interactive legends above
+              },
+              tooltip: {
+                padding: 11,
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                titleFont: { family: 'JetBrains Mono', size: 12 },
+                bodyFont: { family: 'Inter', size: 11 },
+                callbacks: {
+                  label: function(context) {
+                    let label = context.dataset.label || '';
+                    if (label) {
+                      label += ': ';
+                    }
+                    if (context.parsed.y !== null) {
+                      if (context.datasetIndex === 0) {
+                        label += context.parsed.y.toFixed(1) + ' W/m²K';
+                      } else {
+                        label += context.parsed.y.toFixed(5) + ' m²K/W';
+                      }
+                    }
+                    return label;
+                  }
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: {
+                  color: '#f1f5f9'
+                },
+                ticks: {
+                  font: {
+                    family: 'JetBrains Mono',
+                    size: 10
+                  },
+                  maxTicksLimit: 12
+                }
+              },
+              yEfficiency: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                min: 0,
+                max: Math.max(400, getParamsForExchanger(activeExchangerId).uClean * 1.25),
+                title: {
+                  display: true,
+                  text: 'Heat Transfer Coefficient U (W/m²K)',
+                  font: {
+                    family: 'Inter',
+                    size: 11,
+                    weight: 600
+                  },
+                  color: '#2563eb'
+                },
+                ticks: {
+                  font: {
+                    family: 'JetBrains Mono'
+                  }
+                },
+                grid: {
+                  color: '#f1f5f9'
+                }
+              },
+              yFouling: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                min: -0.001,
+                max: Math.max(0.005, getParamsForExchanger(activeExchangerId).rfCritical * 1.35),
+                title: {
+                  display: true,
+                  text: 'Fouling Factor Rf (m²K/W)',
+                  font: {
+                    family: 'Inter',
+                    size: 11,
+                    weight: 600
+                  },
+                  color: '#e11d48'
+                },
+                ticks: {
+                  font: {
+                    family: 'JetBrains Mono'
+                  }
+                },
+                grid: {
+                  drawOnChartArea: false // Avoid duplicate lines
+                }
+              }
+            }
+          },
+          plugins: [{
+            id: 'criticalLine',
+            afterDraw: function(chart) {
+              const yAxis = chart.scales.yFouling;
+              if (!yAxis) return;
+              
+              const currentRfCritical = getParamsForExchanger(activeExchangerId).rfCritical;
+              const yPos = yAxis.getPixelForValue(currentRfCritical);
+              const ctxObj = chart.ctx;
+              
+              ctxObj.save();
+              ctxObj.beginPath();
+              ctxObj.setLineDash([5, 5]);
+              ctxObj.moveTo(chart.chartArea.left, yPos);
+              ctxObj.lineTo(chart.chartArea.right, yPos);
+              ctxObj.lineWidth = 1.5;
+              ctxObj.strokeStyle = '#ef4444'; // Red-550
+              ctxObj.stroke();
+              
+              // Draw label text
+              ctxObj.fillStyle = '#ef4444';
+              ctxObj.font = 'bold 9px JetBrains Mono';
+              ctxObj.textAlign = 'right';
+              ctxObj.fillText(`CRITICAL LIMIT (${currentRfCritical.toFixed(4)})`, chart.chartArea.right - 10, yPos - 6);
+              ctxObj.restore();
+            }
+          }]
+        });
+      }
+
+      // Generate visual alerts helper
+      function toggleBanner(message, isError = false) {
+        const banner = document.getElementById("alert-banner");
+        const msgNode = document.getElementById("alert-message");
+        msgNode.textContent = message;
+        
+        if (isError) {
+          banner.className = "bg-rose-50 border-b border-rose-200 text-rose-800 px-6 py-2.5 flex items-center justify-between text-xs font-semibold shrink-0 animate-fadeIn";
+        } else {
+          banner.className = "bg-amber-50 border-b border-amber-200 text-amber-900 px-6 py-2.5 flex items-center justify-between text-xs font-medium shrink-0 animate-fadeIn";
+        }
+        banner.classList.remove("hidden");
+      }
+
+      // Client side sample CSV template downloader
+      function generateAndDownloadSampleCsv() {
+        const headers = "Date,Exchanger_ID,Flow_Hot,Tin_Hot,Tout_Hot,Tin_Cold,Tout_Cold\n";
+        
+        let demoTemplateStr = headers;
+        const demoData = generatePresetDemoData().slice(0, 30); // Grab a beautiful sample sequence of 30 items
+        
+        demoData.forEach(row => {
+          demoTemplateStr += `${row.Date},${row.Exchanger_ID},${row.Flow_Hot},${row.Tin_Hot},${row.Tout_Hot},${row.Tin_Cold},${row.Tout_Cold}\n`;
+        });
+
+        const blob = new Blob([demoTemplateStr], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "exchanger_fouling_template.csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      // Flex header norm checker
+      function normalizeHeader(h) {
+        if (!h) return "";
+        h = h.trim().toLowerCase().replace(/[\s_-]+/g, '');
+        if (h === 'exchangerid' || h === 'exchanger' || h === 'id' || h === 'exchanger_id') return 'id';
+        if (h === 'uclean' || h === 'u' || h === 'u_clean' || h === 'designu' || h === 'u_design') return 'uClean';
+        if (h === 'area' || h === 'exchangearea' || h === 'surfacearea' || h === 'area_m2') return 'area';
+        if (h === 'rfcritical' || h === 'rfcrit' || h === 'rclean' || h === 'rf_critical' || h === 'rf_crit' || h === 'rcritical' || h === 'rvalue') return 'rfCritical';
+        if (h === 'cphot' || h === 'cp' || h === 'cp_hot') return 'cpHot';
+        return h;
+      }
+
+      function handleDesignFileSelection() {
+        const fileInput = document.getElementById("design-csv-file-input");
+        if (!fileInput) return;
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: function(results) {
+            validateAndImportDesignCsv(results.data);
+          },
+          error: function(err) {
+            toggleBanner("Design specifications failed parsing: " + err, true);
+          }
+        });
+      }
+
+      function validateAndImportDesignCsv(dataRows) {
+        if (!dataRows || dataRows.length === 0) {
+          toggleBanner("The uploaded design specification CSV appears to be empty.", true);
+          return;
+        }
+
+        const firstRow = dataRows[0];
+        const rawHeaders = Object.keys(firstRow);
+        
+        // Build normalized header mapping
+        const keysMapping = {};
+        rawHeaders.forEach(rh => {
+          keysMapping[rh] = normalizeHeader(rh);
+        });
+
+        const mappedKeys = Object.values(keysMapping);
+
+        // Verify key parameters exists
+        const hasId = mappedKeys.includes("id");
+        const hasU = mappedKeys.includes("uClean");
+        const hasArea = mappedKeys.includes("area");
+        const hasRf = mappedKeys.includes("rfCritical");
+
+        if (!hasId || !hasU || !hasArea || !hasRf) {
+          toggleBanner("Failed importing design specs: Missing required columns in CSV (must contain: Exchanger_ID, U_clean, Area, and Rf_critical).", true);
+          return;
+        }
+
+        // Reset previous custom specs list
+        exchangerParams = {};
+        uploadedDesignExchangers = {};
+
+        dataRows.forEach(row => {
+          let unitId = "";
+          let uCleanValue = 300.0;
+          let areaValue = 150.0;
+          let rfCriticalValue = 0.0060;
+          let cpHotValue = 2.1;
+
+          Object.keys(row).forEach(rawH => {
+            const normK = keysMapping[rawH];
+            const rawV = (row[rawH] || "").trim();
+            if (!rawV) return;
+
+            if (normK === "id") {
+              unitId = rawV;
+            } else if (normK === "uClean") {
+              uCleanValue = parseFloat(rawV) || 300.0;
+            } else if (normK === "area") {
+              areaValue = parseFloat(rawV) || 150.0;
+            } else if (normK === "rfCritical") {
+              rfCriticalValue = parseFloat(rawV) || 0.0060;
+            } else if (normK === "cpHot") {
+              cpHotValue = parseFloat(rawV) || 2.1;
+            }
+          });
+
+          if (unitId) {
+            exchangerParams[unitId] = {
+              uClean: uCleanValue,
+              area: areaValue,
+              rfCritical: rfCriticalValue,
+              cpHot: cpHotValue
+            };
+            uploadedDesignExchangers[unitId] = true;
+          }
+        });
+
+        // Cache persistent records locally
+        localStorage.setItem("fouling_exchanger_params", JSON.stringify(exchangerParams));
+        localStorage.setItem("fouling_uploaded_design_exchangers", JSON.stringify(uploadedDesignExchangers));
+
+        // Refresh existing selected records and update visual indicator panels
+        groupAndProcessData(rawData);
+        updateSpecsIndicatorMessage();
+        toggleBanner("Successfully imported design parameters for " + Object.keys(uploadedDesignExchangers).length + " exchanger unit(s). Log metrics re-compiled!");
+      }
+
+      function generateAndDownloadDesignTemplateCsv() {
+        const headers = "Exchanger_ID,U_clean,Area,Rf_critical,Cp_hot\n";
+        let content = headers;
+        
+        // Feed in default mock templates
+        Object.keys(DEFAULT_EXCHANGER_PARAMS).forEach(id => {
+          const spec = DEFAULT_EXCHANGER_PARAMS[id];
+          content += `"${id}",${spec.uClean},${spec.area},${spec.rfCritical},${spec.cpHot}\n`;
+        });
+        
+        // Add custom sample
+        content += `"E-101D (Kerosene Cooler)",340.0,175.5,0.0045,2.4\n`;
+
+        const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", "exchanger_design_specifications.csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    </script>
+  </body>
+</html>
